@@ -2,7 +2,7 @@
 #if MAIN_APP
 
 /* Includes */
-#include "WiFiConfig.h"
+#include "Secrets.h"
 #include <Adafruit_ADS1X15.h>
 #include <Arduino.h>
 #include <HTTPClient.h>
@@ -17,7 +17,7 @@ HTTPClient http;
 SDS011 sds;
 
 /* Global variables */
-String serverName = "http://localhost:8086/write?db=test_db?";
+int counter = 0;
 
 /* Defines and macros */
 
@@ -33,24 +33,26 @@ void setup(void)
 
     InitWiFi();
 
-    if (!ads.begin())
-    {
-        Serial.println("Failed to initialize ADS.");
-        while (1);
-    }
+    // if (!ads.begin())
+    // {
+    //     Serial.println("Failed to initialize ADS.");
+    //     while (1);
+    // }
 
-    sds.begin(&port);
+    // sds.begin(&port);
 
 }
 
 void loop(void)
 {
-    ReadAndPrintADSMeasurements();
-    delay(2000);
-    ReadAndPrintSDSMeasurements();
-    delay(5000);
+    // ReadAndPrintADSMeasurements();
+    // delay(2000);
+    // ReadAndPrintSDSMeasurements();
+    // delay(5000);
     SendToDatabase();
     delay(2000);
+
+    counter++;
 }
 
 void InitWiFi(void)
@@ -121,16 +123,18 @@ void SendToDatabase(void)
 
         // Your Domain name with URL path or IP address with path
         http.begin(serverName.c_str());
+        http.addHeader("Content-Type", "application/raw");
+        String httpRequestData = "measurements69,value=1 value=" + ((String)counter);
 
         // Send HTTP GET request
-        int httpResponseCode = http.GET();
+        int httpResponseCode = http.POST(httpRequestData);
 
         if (httpResponseCode > 0)
         {
             Serial.print("HTTP Response code: ");
             Serial.println(httpResponseCode);
-            String payload = http.getString();
-            Serial.println(payload);
+            // String payload = http.getString();
+            // Serial.println(payload);
         }
         else
         {
