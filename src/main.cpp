@@ -13,96 +13,122 @@
 /* Global objects */
 Adafruit_ADS1115 ads;
 HardwareSerial port(2);
-HTTPClient http;
 SDS011 sds;
 
 /* Global variables */
-int counter = 0;
 
 /* Defines and macros */
+#define ADS_CHANNEL_0  0U
+#define ADS_CHANNEL_1  1U
+#define ADS_CHANNEL_2  2U
+#define ADS_CHANNEL_3  3U
+#define SDS_ENABLE_PIN 23U
+/* ToDo change to 30000 in production*/
+#define SDS_READ_DELAY 10000U
 
 /* Functions prototypes */
 void InitWiFi(void);
-void ReadAndPrintADSMeasurements(void);
-void ReadAndPrintSDSMeasurements(void);
+void ADSMeasurement(void);
+void SDSMeasurement(void);
 void SendToDatabase(void);
 
+/* Init function */
 void setup(void)
 {
     Serial.begin(115200);
-
+    pinMode(SDS_ENABLE_PIN, OUTPUT);
     InitWiFi();
 
-    // if (!ads.begin())
-    // {
-    //     Serial.println("Failed to initialize ADS.");
-    //     while (1);
-    // }
+    if (!ads.begin())
+    {
+        Serial.println("Failed to initialize ADS.");
+        while (1);
+    }
 
-    // sds.begin(&port);
+    sds.begin(&port);
 
 }
 
+/* Main loop function */
 void loop(void)
 {
-    // ReadAndPrintADSMeasurements();
-    // delay(2000);
-    // ReadAndPrintSDSMeasurements();
-    // delay(5000);
+    ADSMeasurement();
+    SDSMeasurement();
     SendToDatabase();
-    delay(2000);
-
-    counter++;
 }
 
+/* Function to connect to WIFI */
 void InitWiFi(void)
 {
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
+
     Serial.print("Connecting to WiFi ..");
+
     while (WiFi.status() != WL_CONNECTED)
     {
         Serial.print('.');
         delay(1000);
     }
+
     Serial.println(WiFi.localIP());
 }
 
-void ReadAndPrintADSMeasurements(void)
+/* Function for reading ADS sensor values */
+void ADSMeasurement(void)
 {
-    int16_t adc0, adc1, adc2, adc3;
-    float volts0, volts1, volts2, volts3;
+    /* ADS reads in integer */
+    int16_t adcCh0Reading = 0U;
+    int16_t adcCh1Reading = 0U;
+    int16_t adcCh2Reading = 0U;
+    int16_t adcCh3Reading = 0U;
+    /* ADS reads in volts */
+    float voltsCh0 = 0.0;
+    float voltsCh1 = 0.0;
+    float voltsCh2 = 0.0;
+    float voltsCh3 = 0.0;
 
-    adc0 = ads.readADC_SingleEnded(0);
-    adc1 = ads.readADC_SingleEnded(1);
-    adc2 = ads.readADC_SingleEnded(2);
-    adc3 = ads.readADC_SingleEnded(3);
+    /* ADS read */
+    adcCh0Reading = ads.readADC_SingleEnded(ADS_CHANNEL_0);
+    adcCh1Reading = ads.readADC_SingleEnded(ADS_CHANNEL_1);
+    adcCh2Reading = ads.readADC_SingleEnded(ADS_CHANNEL_2);
+    adcCh3Reading = ads.readADC_SingleEnded(ADS_CHANNEL_3);
 
-    volts0 = ads.computeVolts(adc0);
-    volts1 = ads.computeVolts(adc1);
-    volts2 = ads.computeVolts(adc2);
-    volts3 = ads.computeVolts(adc3);
+    /* Convert ADS reads to volts */
+    voltsCh0 = ads.computeVolts(adcCh0Reading);
+    voltsCh1 = ads.computeVolts(adcCh1Reading);
+    voltsCh2 = ads.computeVolts(adcCh2Reading);
+    voltsCh3 = ads.computeVolts(adcCh3Reading);
 
+    /* Print all measured values */
     Serial.println("-----------------------------------------------------------");
-    Serial.print("AIN0: "); Serial.print(adc0); Serial.print("  "); Serial.print(volts0); Serial.println("V");
-    Serial.print("AIN1: "); Serial.print(adc1); Serial.print("  "); Serial.print(volts1); Serial.println("V");
-    Serial.print("AIN2: "); Serial.print(adc2); Serial.print("  "); Serial.print(volts2); Serial.println("V");
-    Serial.print("AIN3: "); Serial.print(adc3); Serial.print("  "); Serial.print(volts3); Serial.println("V");
+    Serial.print("AIN0: "); Serial.print(adcCh0Reading); Serial.print("  "); Serial.print(voltsCh0); Serial.println("V");
+    Serial.print("AIN1: "); Serial.print(adcCh1Reading); Serial.print("  "); Serial.print(voltsCh1); Serial.println("V");
+    Serial.print("AIN2: "); Serial.print(adcCh2Reading); Serial.print("  "); Serial.print(voltsCh2); Serial.println("V");
+    Serial.print("AIN3: "); Serial.print(adcCh3Reading); Serial.print("  "); Serial.print(voltsCh3); Serial.println("V");
 }
 
-void ReadAndPrintSDSMeasurements(void)
+/* Function for reading SDS sensor values */
+void SDSMeasurement(void)
 {
-    float p10, p25;
-    int err;
+    /* Variables to store sensor readings and read status*/
+    float p10 = 0.0;
+    float p25 = 0.0;
+    int sdsReadStatus = 0;
 
+    /* Wakeup sensor and provide power to it */
+    digitalWrite(SDS_ENABLE_PIN, HIGH);
     sds.wakeup();
     Serial.println("SDS wakeup");
-    delay(5000);
+    delay(SDS_READ_DELAY);
 
-    err = sds.read(&p25, &p10);
+    /* Read sensor values */
+    sdsReadStatus = sds.read(&p25, &p10);
 
-    if (!err)
+    /* Check for error */
+    if (!sdsReadStatus)
     {
+        /* Print values */
         Serial.println("P2.5: " + String(p25));
         Serial.println("P10:  " + String(p10));
     }
@@ -111,20 +137,25 @@ void ReadAndPrintSDSMeasurements(void)
         Serial.println("SDS read error");
     }
 
+    /* Go to sleep, disable power */
     sds.sleep();
+    digitalWrite(SDS_ENABLE_PIN, LOW);
     Serial.println("SDS sleep");
 }
 
+/* Function to send sensor values to database */
 void SendToDatabase(void)
 {
-    if(WiFi.status()== WL_CONNECTED)
+    if(WiFi.status() == WL_CONNECTED)
     {
         HTTPClient http;
 
-        // Your Domain name with URL path or IP address with path
+        /* Start client with server address */
         http.begin(serverName.c_str());
+        /* Add header for raw data */
         http.addHeader("Content-Type", "application/raw");
-        String httpRequestData = "measurements69,value=1 value=" + ((String)counter);
+        /* ToDo test data for now */
+        String httpRequestData = "measurements69,value=1 value_1=" + String(random(500));
 
         // Send HTTP GET request
         int httpResponseCode = http.POST(httpRequestData);
@@ -133,8 +164,6 @@ void SendToDatabase(void)
         {
             Serial.print("HTTP Response code: ");
             Serial.println(httpResponseCode);
-            // String payload = http.getString();
-            // Serial.println(payload);
         }
         else
         {
