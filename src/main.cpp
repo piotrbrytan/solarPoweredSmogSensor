@@ -17,6 +17,9 @@ SDS011 sds;
 
 /* Global variables */
 
+/* Variables resistant to software reboots */
+RTC_NOINIT_ATTR uint8_t wifiConnectionAttempts;
+
 /* Defines and macros */
 #define ADS_CHANNEL_0  0U
 #define ADS_CHANNEL_1  1U
@@ -27,22 +30,24 @@ SDS011 sds;
 #define SDS_READ_DELAY 10000U
 
 /* Functions prototypes */
+void PrepareResistantVariables(void);
 void InitWiFi(void);
 void ADSMeasurement(void);
 void SDSMeasurement(void);
 void SendToDatabase(void);
+void DeepSleep(void);
 
 /* Init function */
 void setup(void)
 {
     Serial.begin(115200);
     pinMode(SDS_ENABLE_PIN, OUTPUT);
+    PrepareResistantVariables();
     InitWiFi();
 
     if (!ads.begin())
     {
         Serial.println("Failed to initialize ADS.");
-        while (1);
     }
 
     sds.begin(&port);
@@ -57,21 +62,59 @@ void loop(void)
     SendToDatabase();
 }
 
+/* Prepare variables that are resistatnt after reboot
+ * Initialize only if it is first power up
+ */
+void PrepareResistantVariables(void)
+{
+    Serial.println("Wakeup cause " + String(esp_sleep_get_wakeup_cause()));
+    Serial.println("Reset cause " + String(esp_reset_reason()));
+
+    if (esp_reset_reason() == ESP_RST_POWERON)
+    {
+        wifiConnectionAttempts = 0U;
+    }
+}
+
 /* Function to connect to WIFI */
 void InitWiFi(void)
 {
+    /* Time in seconds before reboot */
+    uint8_t connectionTimeout = 0U;
+
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
 
-    Serial.print("Connecting to WiFi ..");
+    ++wifiConnectionAttempts;
 
+    Serial.print("Connecting to WiFi attempt = " + String(wifiConnectionAttempts));
+
+    /* Wait until wifi is connected */
     while (WiFi.status() != WL_CONNECTED)
     {
-        Serial.print('.');
+        ++connectionTimeout;
+        Serial.println("Attemp=" + String(connectionTimeout));
         delay(1000);
+
+        /* Try to connect for WIFI_TIMEOUT seconds */
+        if (connectionTimeout >= WIFI_TIMEOUT)
+        {
+            Serial.println("Unable to connect to wifi");
+
+            /* Reboot ESP and try again, after WIFI_CONNECTION_ATTEMPTS go to deep sleep */
+            if (wifiConnectionAttempts < WIFI_CONNECTION_ATTEMPTS)
+            {
+                ESP.restart();
+            }
+            else
+            {
+                DeepSleep();
+            }
+        }
     }
 
     Serial.println(WiFi.localIP());
+    wifiConnectionAttempts = 0U;
 }
 
 /* Function for reading ADS sensor values */
@@ -174,6 +217,14 @@ void SendToDatabase(void)
         // Free resources
         http.end();
     }
+}
+
+/* Prepare and go to deep sleep */
+void DeepSleep(void)
+{
+    /* ToDo only print and infinite loop for now */
+    Serial.println("DEEP SLEEP for 30 minutes");
+    while (1);
 }
 
 #endif /* MAIN_APP */
