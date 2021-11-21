@@ -16,6 +16,12 @@ HardwareSerial port(2);
 SDS011 sds;
 
 /* Global variables */
+float voltsCh0 = 0.0;
+float voltsCh1 = 0.0;
+float voltsCh2 = 0.0;
+float voltsCh3 = 0.0;
+float p10 = 0.0;
+float p25 = 0.0;
 
 /* Variables resistant to software reboots */
 RTC_NOINIT_ATTR uint8_t wifiConnectionAttempts;
@@ -30,12 +36,13 @@ RTC_NOINIT_ATTR uint8_t wifiConnectionAttempts;
 #define SDS_READ_DELAY 10000U
 
 /* Functions prototypes */
-void PrepareResistantVariables(void);
-void InitWiFi(void);
-void ADSMeasurement(void);
-void SDSMeasurement(void);
-void SendToDatabase(void);
-void DeepSleep(void);
+static void PrepareResistantVariables(void);
+static void InitWiFi(void);
+static void ADSMeasurement(void);
+static void SDSMeasurement(void);
+static void SendToDatabase(void);
+static String PrepareDataForDatabase(void);
+static void DeepSleep(void);
 
 /* Init function */
 void setup(void)
@@ -62,10 +69,10 @@ void loop(void)
     SendToDatabase();
 }
 
-/* Prepare variables that are resistatnt after reboot
+/* Prepare variables that are resistant after reboot
  * Initialize only if it is first power up
  */
-void PrepareResistantVariables(void)
+static void PrepareResistantVariables(void)
 {
     Serial.println("Wakeup cause " + String(esp_sleep_get_wakeup_cause()));
     Serial.println("Reset cause " + String(esp_reset_reason()));
@@ -77,7 +84,7 @@ void PrepareResistantVariables(void)
 }
 
 /* Function to connect to WIFI */
-void InitWiFi(void)
+static void InitWiFi(void)
 {
     /* Time in seconds before reboot */
     uint8_t connectionTimeout = 0U;
@@ -87,13 +94,13 @@ void InitWiFi(void)
 
     ++wifiConnectionAttempts;
 
-    Serial.print("Connecting to WiFi attempt = " + String(wifiConnectionAttempts));
+    Serial.println("Connecting to WiFi attempt = " + String(wifiConnectionAttempts));
 
     /* Wait until wifi is connected */
     while (WiFi.status() != WL_CONNECTED)
     {
         ++connectionTimeout;
-        Serial.println("Attemp=" + String(connectionTimeout));
+        Serial.println("Attempt=" + String(connectionTimeout));
         delay(1000);
 
         /* Try to connect for WIFI_TIMEOUT seconds */
@@ -118,18 +125,13 @@ void InitWiFi(void)
 }
 
 /* Function for reading ADS sensor values */
-void ADSMeasurement(void)
+static void ADSMeasurement(void)
 {
     /* ADS reads in integer */
     int16_t adcCh0Reading = 0U;
     int16_t adcCh1Reading = 0U;
     int16_t adcCh2Reading = 0U;
     int16_t adcCh3Reading = 0U;
-    /* ADS reads in volts */
-    float voltsCh0 = 0.0;
-    float voltsCh1 = 0.0;
-    float voltsCh2 = 0.0;
-    float voltsCh3 = 0.0;
 
     /* ADS read */
     adcCh0Reading = ads.readADC_SingleEnded(ADS_CHANNEL_0);
@@ -152,11 +154,9 @@ void ADSMeasurement(void)
 }
 
 /* Function for reading SDS sensor values */
-void SDSMeasurement(void)
+static void SDSMeasurement(void)
 {
-    /* Variables to store sensor readings and read status*/
-    float p10 = 0.0;
-    float p25 = 0.0;
+    /* Variable to store read status*/
     int sdsReadStatus = 0;
 
     /* Wakeup sensor and provide power to it */
@@ -187,7 +187,7 @@ void SDSMeasurement(void)
 }
 
 /* Function to send sensor values to database */
-void SendToDatabase(void)
+static void SendToDatabase(void)
 {
     if(WiFi.status() == WL_CONNECTED)
     {
@@ -197,8 +197,7 @@ void SendToDatabase(void)
         http.begin(serverName.c_str());
         /* Add header for raw data */
         http.addHeader("Content-Type", "application/raw");
-        /* ToDo test data for now */
-        String httpRequestData = "measurements69,value=1 value_1=" + String(random(500));
+        String httpRequestData = PrepareDataForDatabase();
 
         // Send HTTP GET request
         int httpResponseCode = http.POST(httpRequestData);
@@ -219,8 +218,26 @@ void SendToDatabase(void)
     }
 }
 
+/* Format data that will be send to database */
+static String PrepareDataForDatabase(void)
+{
+    char buffer[100];
+
+    /* All measures in one buffer, two digits precision */
+    sprintf(buffer, "data,adc=ads ch0=%.2f,ch1=%.2f,ch2=%.2f,ch3=%.2f,pm25=%.2f,pm10=%.2f",
+            voltsCh0,
+            voltsCh1,
+            voltsCh2,
+            voltsCh3,
+            p25,
+            p10);
+
+    Serial.println(buffer);
+    return buffer;
+}
+
 /* Prepare and go to deep sleep */
-void DeepSleep(void)
+static void DeepSleep(void)
 {
     /* ToDo only print and infinite loop for now */
     Serial.println("DEEP SLEEP for 30 minutes");
